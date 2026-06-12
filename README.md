@@ -117,7 +117,7 @@ and load it in news_fetcher.py with os.environ["NEWSAPI_KEY"].
 
 
 Python 3.10+
-scikit-learn, pandas, joblib
+pandas, joblib
 FastAPI + Uvicorn
 HTML / Tailwind CSS / vanilla JS (Sift UI)
 Streamlit (optional dashboard)

@@ -1,124 +1,130 @@
-# 📰 AI Fake News Credibility Detector
+🔍 Sift — Separate Signal from Noise
 
-A multi-layer fake news detection system built with **Streamlit**, **FastAPI**, and **scikit-learn**. The system combines ML classification with rule-based credibility analysis to score news articles.
+A multi-layer fake news detection system. Sift combines a trained machine learning
+classifier with rule-based credibility checks to score how trustworthy a piece of
+news text is, and explains why in plain language.
 
----
 
-## 🚀 Features
+🚀 Features
 
-- **ML Layer** — Logistic Regression trained on TF-IDF features (WELFake/Kaggle dataset)
-- **Linguistic Layer** — Detects sensational/clickbait language patterns
-- **Structural Layer** — Checks article length and structure
-- **Entity Layer** — Identifies credible named entities and citations
-- **Realtime Layer** — Placeholder for future API-based fact verification
-- **Streamlit UI** — Clean interface with credibility score and verdict
-- **FastAPI Backend** — REST endpoint for programmatic access
 
----
+ML Layer — Logistic Regression trained on TF-IDF features (WELFake dataset, 44,919 articles)
+Linguistic Layer — Flags sensational / clickbait language patterns
+Structural Layer — Checks article length and structure
+Entity Layer — Looks for credible named entities and sourcing language
+Realtime Layer — Placeholder for future live fact-check API
+Sift UI (sift.html) — Standalone web interface with a credibility gauge, signal/noise breakdown, and reasoning panel
+FastAPI Backend (api.py) — REST endpoint (/predict) for programmatic access
+Streamlit App (app.py, optional) — Alternative UI with a PostgreSQL-backed analytics dashboard
 
-## 📁 Project Structure
 
-```
-fake-news-project/
-├── app.py              # Streamlit frontend
-├── predict.py          # Core multi-layer prediction logic
-├── api.py              # FastAPI backend
-├── train_model.py      # Model training pipeline
-├── news_fetcher.py     # NewsAPI integration
-├── load_model.py       # Model loading utility
-├── models/             # Trained model files (see setup)
+
+📁 Project Structure
+
+sift/
+├── sift.html            # Standalone frontend (Scanner, Activity, Methodology)
+├── app.py                # Streamlit frontend (optional, needs Postgres)
+├── predict.py            # Core multi-layer scoring logic
+├── api.py                 # FastAPI backend serving /predict
+├── train_model.py         # Model training pipeline
+├── load_model.py           # Model loading utility
+├── news_fetcher.py          # NewsAPI integration (requires your own API key)
+├── db.py                      # PostgreSQL helpers for the Streamlit dashboard
+├── init_db.sql                 # DB schema for predictions + retrain logs
+├── docker-compose.yml            # Postgres + pgAdmin + Airflow stack (optional)
+├── retrain_dag.py                 # Weekly Airflow retraining DAG (optional)
+├── models/                          # Trained model files (generated, not committed)
 │   ├── logistic_model.pkl
 │   ├── naive_model.pkl
 │   └── vectorizer.pkl
 ├── requirements.txt
 └── .gitignore
-```
 
----
 
-## ⚙️ Setup
+⚙️ Setup
 
-### 1. Clone the repository
-```bash
-git clone https://github.com/your-username/fake-news-detector.git
-cd fake-news-detector
-```
+1. Clone the repository
 
-### 2. Create virtual environment
-```bash
-python -m venv venv
+bashgit clone https://github.com/<your-username>/sift.git
+cd sift
+
+2. Create a virtual environment
+
+bashpython -m venv venv
 source venv/bin/activate      # Linux/Mac
 venv\Scripts\activate         # Windows
-```
 
-### 3. Install dependencies
-```bash
-pip install -r requirements.txt
-```
+3. Install dependencies
 
-### 4. Download trained models
-The `.pkl` model files are too large for GitHub. Download them from the link below and place them in the `models/` folder:
+bashpip install -r requirements.txt
 
-> 📦 [Download models from Google Drive](#) *(replace with your actual link)*
+4. Get the training data
 
-### 5. Run the Streamlit app
-```bash
-streamlit run app.py
-```
+Download Fake.csv and True.csv from the
+WELFake dataset on Kaggle
+and place them in the project root. These are not committed to the repo
+(see .gitignore).
 
-### 6. Run the FastAPI backend (optional)
-```bash
-uvicorn api:app --reload
-```
-API docs available at: `http://127.0.0.1:8000/docs`
+5. Train the model
 
----
-
-## 📊 Scoring Logic
-
-| Layer         | Weight | Description                          |
-|---------------|--------|--------------------------------------|
-| ML (real_prob)| 50%    | Logistic Regression prediction       |
-| Linguistic    | 15%    | Sensational language detection       |
-| Entity        | 15%    | Named entity / citation presence     |
-| Realtime      | 10%    | API fact-check (placeholder)         |
-| Structural    | 10%    | Article length analysis              |
-
-**Verdict thresholds:**
-- `< 0.35` → ⚠️ Highly Suspicious — Likely FAKE
-- `0.35–0.50` → 🔶 Misleading — Needs Verification
-- `0.50–0.65` → 🔷 Uncertain — Possibly Real
-- `> 0.65` → ✅ Likely REAL NEWS
-
----
-
-## 🏋️ Training Your Own Model
-
-Download the [WELFake dataset](https://www.kaggle.com/datasets/saurabhshahane/fake-news-classification) and place `Fake.csv` and `True.csv` in the root directory, then run:
-
-```bash
+bashmkdir models
 python train_model.py
-```
 
----
+This generates models/logistic_model.pkl, models/naive_model.pkl, and
+models/vectorizer.pkl. These are also gitignored — too large for GitHub.
 
-## 🔑 NewsAPI Key
+6. Run the FastAPI backend
 
-To use `news_fetcher.py`, replace the `API_KEY` in `news_fetcher.py` with your own key from [newsapi.org](https://newsapi.org/).
+bashuvicorn api:app --port 8000
 
----
+API docs available at http://127.0.0.1:8000/docs
 
-## 📌 Tech Stack
+7. Open the Sift UI
 
-- Python 3.10+
-- scikit-learn
-- Streamlit
-- FastAPI + Uvicorn
-- joblib
-- pandas
+Open sift.html directly in a browser, or serve it:
 
----
+bashpython -m http.server 5500
 
-## 👤 Author
+then visit http://localhost:5500/sift.html.
 
-**Rakshana** — [24BCS220, Kumaraguru College of Technology]
+
+📊 Scoring Logic
+
+LayerWeightDescriptionML (real_prob)50%Logistic Regression predictionLinguistic15%Sensational language detectionEntity15%Named entity / citation presenceStructural10%Article length analysisRealtime10%Live fact-check (placeholder)
+
+Verdict thresholds:
+
+
+< 0.35 → ⚠️ Highly Suspicious — Likely FAKE
+0.35–0.50 → 🔶 Misleading — Needs Verification
+0.50–0.65 → 🔷 Uncertain — Possibly Real
+> 0.65 → ✅ Likely REAL NEWS
+
+
+
+🔑 NewsAPI Key
+
+news_fetcher.py requires a NewsAPI key. Do not hardcode
+it — set it as an environment variable instead:
+
+bashexport NEWSAPI_KEY="9574ead008e44845ba97d56d2686ee3c"     # Linux/Mac
+$env:NEWSAPI_KEY="9574ead008e44845ba97d56d2686ee3c"       # Windows PowerShell
+
+and load it in news_fetcher.py with os.environ["NEWSAPI_KEY"].
+
+
+📌 Tech Stack
+
+
+Python 3.10+
+scikit-learn, pandas, joblib
+FastAPI + Uvicorn
+HTML / Tailwind CSS / vanilla JS (Sift UI)
+Streamlit (optional dashboard)
+PostgreSQL + Airflow (optional data pipeline)
+
+
+
+👤 Author
+
+Rakshana — 24BCS220, Kumaraguru College of Technology

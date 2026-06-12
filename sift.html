@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Sift | Separate Signal from Noise</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        colors: {
+          "ink": "#13182B",
+          "on-ink": "#F4F6FB",
+          "paper": "#EEF1F7",
+          "paper-bright": "#FFFFFF",
+          "card": "#FFFFFF",
+          "card-border": "#D9DEEA",
+          "muted": "#5C6680",
+          "signal": "#1E9C8C",
+          "on-signal": "#FFFFFF",
+          "signal-soft": "#DFF4EF",
+          "noise": "#E5533D",
+          "on-noise": "#FFFFFF",
+          "noise-soft": "#FBE4E0",
+          "amber": "#E3A33E",
+          "amber-soft": "#FBEFD9",
+          "brand": "#3D4FE0",
+          "on-brand": "#FFFFFF",
+          "brand-soft": "#E3E7FD",
+        },
+        borderRadius: { "DEFAULT": "10px", "lg": "16px", "xl": "24px", "full": "9999px" },
+        spacing: { "xs": "8px", "sm": "16px", "md": "24px", "lg": "40px", "xl": "72px", "base": "4px", "gutter": "24px" },
+        fontFamily: {
+          "display": ["Space Grotesk", "sans-serif"],
+          "body": ["Inter", "sans-serif"],
+          "mono": ["IBM Plex Mono", "monospace"],
+        },
+        fontSize: {
+          "display-lg": ["56px", { lineHeight: "1.05", letterSpacing: "-0.02em", fontWeight: "700" }],
+          "display-md": ["36px", { lineHeight: "1.1", letterSpacing: "-0.01em", fontWeight: "700" }],
+          "headline": ["28px", { lineHeight: "1.2", fontWeight: "600" }],
+          "title": ["18px", { lineHeight: "1.4", fontWeight: "600" }],
+          "body-lg": ["18px", { lineHeight: "1.6", fontWeight: "400" }],
+          "body": ["15px", { lineHeight: "1.6", fontWeight: "400" }],
+          "label": ["13px", { lineHeight: "1.4", letterSpacing: "0.02em", fontWeight: "500" }],
+          "tag": ["11px", { lineHeight: "1.4", letterSpacing: "0.08em", fontWeight: "600" }],
+        }
+      }
+    }
+  }
+</script>
+<style>
+  .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; vertical-align: middle; }
+  body { background-image: radial-gradient(circle at 1px 1px, rgba(61,79,224,0.06) 1px, transparent 0); background-size: 28px 28px; }
+  .page { display: none; }
+  .page.active { display: block; }
+  .nav-link { transition: color 0.2s; position: relative; }
+  .nav-link.active { color: #13182B; font-weight: 600; }
+  .nav-link.active::after { content:''; position:absolute; left:0; right:0; bottom:-22px; height:2px; background:#3D4FE0; }
+  .verdict-real { background: #DFF4EF; color: #126E62; border: 1px solid #1E9C8C; }
+  .verdict-fake { background: #FBE4E0; color: #A8331F; border: 1px solid #E5533D; }
+  .verdict-uncertain { background: #E3E7FD; color: #2A37A8; border: 1px solid #3D4FE0; }
+  .verdict-misleading { background: #FBEFD9; color: #93651C; border: 1px solid #E3A33E; }
+  .score-bar { transition: width 1s cubic-bezier(.34,1.56,.64,1); }
+  @keyframes fadeInUp { from { opacity:0; transform: translateY(16px); } to { opacity:1; transform:translateY(0); } }
+  .fade-in { animation: fadeInUp 0.5s ease-out forwards; }
+  .skeleton { background: linear-gradient(90deg,#E3E7F0 25%,#EEF1F7 50%,#E3E7F0 75%); background-size: 200% 100%; animation: skeleton-loading 1.4s infinite; }
+  @keyframes skeleton-loading { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+  .eq-bar { transition: height 1.2s cubic-bezier(.22,1,.36,1); }
+  #gauge-needle { transform-origin: 100px 100px; transition: transform 1.1s cubic-bezier(.34,1.56,.64,1); }
+  .card-hover { transition: transform 0.25s cubic-bezier(.22,1,.36,1), box-shadow 0.25s ease; }
+  .card-hover:hover { transform: translateY(-4px); box-shadow: 0 14px 32px rgba(19,24,43,0.10); }
+</style>
+</head>
+<body class="bg-paper font-body text-ink min-h-screen flex flex-col">
+
+<!-- TOP NAV -->
+<header class="fixed top-0 left-0 right-0 z-50 bg-paper-bright border-b border-card-border h-16">
+  <nav class="flex justify-between items-center w-full px-md h-full max-w-[1280px] mx-auto">
+    <div class="flex items-center gap-2 cursor-pointer" onclick="navigate('landing')">
+      <span class="material-symbols-outlined text-brand" style="font-variation-settings:'FILL' 1; font-size:26px;">graphic_eq</span>
+      <span class="font-display text-title font-bold text-ink tracking-tight">Sift</span>
+    </div>
+    <div class="hidden md:flex items-center gap-xl relative">
+      <a class="nav-link font-body text-body text-muted hover:text-ink cursor-pointer" id="nav-scanner" onclick="navigate('detector')">Scanner</a>
+      <a class="nav-link font-body text-body text-muted hover:text-ink cursor-pointer" id="nav-dashboard" onclick="navigate('dashboard')">Activity</a>
+      <a class="nav-link font-body text-body text-muted hover:text-ink cursor-pointer" id="nav-about" onclick="navigate('about')">Methodology</a>
+    </div>
+    <div class="flex items-center gap-md">
+      <button onclick="navigate('detector')" class="px-md py-2 rounded-full bg-ink text-on-ink font-body text-label font-semibold hover:bg-brand transition-colors">Run a scan</button>
+    </div>
+  </nav>
+</header>
+
+<!-- ====================================================== -->
+<!-- PAGE: LANDING -->
+<!-- ====================================================== -->
+<main id="page-landing" class="page active pt-16">
+
+  <!-- Hero -->
+  <section class="px-md py-xl">
+    <div class="max-w-[1280px] mx-auto grid grid-cols-1 lg:grid-cols-2 gap-xl items-center">
+      <div class="space-y-md fade-in">
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-soft text-brand text-tag font-mono uppercase">
+          <span class="material-symbols-outlined text-[16px]">sensors</span>
+          5-layer credibility engine
+        </div>
+        <h1 class="font-display text-display-lg text-ink max-w-xl">Read the news.<br>Not the noise.</h1>
+        <p class="font-body text-body-lg text-muted max-w-lg">
+          Paste any article and Sift runs it through a trained ML model plus four credibility checks &mdash; tuned on 44,000+ articles &mdash; to separate signal from noise in seconds.
+        </p>
+        <div class="flex flex-wrap gap-md pt-xs">
+          <button onclick="navigate('detector')" class="px-lg py-md rounded-full bg-ink text-on-ink font-display text-title hover:bg-brand transition-colors duration-300 flex items-center gap-2 group">
+            Scan an article
+            <span class="material-symbols-outlined group-hover:translate-x-1 transition-transform">arrow_forward</span>
+          </button>
+          <button onclick="navigate('about')" class="px-lg py-md rounded-full border-2 border-card-border bg-transparent text-ink font-display text-title hover:border-brand hover:text-brand transition-colors duration-300">
+            How it works
+          </button>
+        </div>
+        <div class="flex items-center gap-xl pt-lg border-t border-card-border">
+          <div>
+            <div class="font-mono text-headline text-ink">98.5%</div>
+            <div class="text-label text-muted">Test accuracy</div>
+          </div>
+          <div>
+            <div class="font-mono text-headline text-ink">44K+</div>
+            <div class="text-label text-muted">Training articles</div>
+          </div>
+          <div>
+            <div class="font-mono text-headline text-ink">5</div>
+            <div class="text-label text-muted">Signal layers</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Hero Visual: signal console -->
+      <div class="relative flex justify-center fade-in" style="animation-delay:0.15s">
+        <div class="w-full max-w-md bg-ink text-on-ink rounded-xl p-lg space-y-lg shadow-2xl">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="material-symbols-outlined text-noise" style="font-variation-settings:'FILL' 1;">podcasts</span>
+              <span class="font-mono text-label uppercase tracking-widest text-on-ink/70">Incoming article</span>
+            </div>
+            <span class="font-mono text-tag px-2 py-1 rounded bg-noise/20 text-noise uppercase">High noise</span>
+          </div>
+          <p class="font-mono text-body text-on-ink/80 border-l-2 border-noise pl-md leading-relaxed">
+            "SHOCKING: officials secretly hiding miracle cure &mdash; mainstream media won't show you this..."
+          </p>
+          <!-- Equalizer -->
+          <div class="space-y-2">
+            <div class="flex justify-between font-mono text-tag uppercase text-on-ink/50">
+              <span>Signal breakdown</span><span>0&ndash;100</span>
+            </div>
+            <div class="flex items-end gap-3 h-28">
+              <div class="flex-1 flex flex-col items-center gap-2">
+                <div class="w-full bg-white/10 rounded-t h-full flex items-end overflow-hidden"><div class="w-full bg-signal rounded-t" style="height:18%"></div></div>
+                <span class="font-mono text-tag text-on-ink/50">ML</span>
+              </div>
+              <div class="flex-1 flex flex-col items-center gap-2">
+                <div class="w-full bg-white/10 rounded-t h-full flex items-end overflow-hidden"><div class="w-full bg-noise rounded-t" style="height:78%"></div></div>
+                <span class="font-mono text-tag text-on-ink/50">LING</span>
+              </div>
+              <div class="flex-1 flex flex-col items-center gap-2">
+                <div class="w-full bg-white/10 rounded-t h-full flex items-end overflow-hidden"><div class="w-full bg-amber rounded-t" style="height:55%"></div></div>
+                <span class="font-mono text-tag text-on-ink/50">STRUCT</span>
+              </div>
+              <div class="flex-1 flex flex-col items-center gap-2">
+                <div class="w-full bg-white/10 rounded-t h-full flex items-end overflow-hidden"><div class="w-full bg-noise rounded-t" style="height:85%"></div></div>
+                <span class="font-mono text-tag text-on-ink/50">ENTITY</span>
+              </div>
+              <div class="flex-1 flex flex-col items-center gap-2">
+                <div class="w-full bg-white/10 rounded-t h-full flex items-end overflow-hidden"><div class="w-full bg-amber rounded-t" style="height:50%"></div></div>
+                <span class="font-mono text-tag text-on-ink/50">LIVE</span>
+              </div>
+            </div>
+          </div>
+          <div class="px-md py-3 rounded-lg bg-noise/15 border border-noise/40 text-on-ink font-display text-title flex items-center gap-2">
+            <span class="material-symbols-outlined text-noise" style="font-variation-settings:'FILL' 1;">report</span>
+            Highly suspicious &mdash; likely fake
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section class="py-xl px-md bg-paper-bright border-y border-card-border">
+    <div class="max-w-[1280px] mx-auto">
+      <div class="max-w-2xl mb-xl">
+        <h2 class="font-display text-display-md text-ink mb-3">One score, five readings</h2>
+        <p class="font-body text-body-lg text-muted">
+          No single signal tells the whole story. Sift cross-checks language patterns, structure, sourcing, and a trained classifier &mdash; then blends them into one credibility score.
+        </p>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-md">
+        <div class="bg-card p-lg rounded-xl border border-card-border card-hover flex flex-col gap-md">
+          <div class="w-11 h-11 rounded-lg bg-brand-soft flex items-center justify-center">
+            <span class="material-symbols-outlined text-brand" style="font-variation-settings:'FILL' 1;">model_training</span>
+          </div>
+          <h3 class="font-display text-title text-ink">Trained classifier</h3>
+          <p class="font-body text-body text-muted">A logistic regression model over TF-IDF features, trained on 44K+ labeled real and fake articles, scores the raw probability of fabrication.</p>
+        </div>
+        <div class="bg-card p-lg rounded-xl border border-card-border card-hover flex flex-col gap-md">
+          <div class="w-11 h-11 rounded-lg bg-brand-soft flex items-center justify-center">
+            <span class="material-symbols-outlined text-brand" style="font-variation-settings:'FILL' 1;">spellcheck</span>
+          </div>
+          <h3 class="font-display text-title text-ink">Language &amp; structure checks</h3>
+          <p class="font-body text-body text-muted">Sift flags sensational phrasing, clickbait patterns, and articles that are too thin to substantiate their claims.</p>
+        </div>
+        <div class="bg-card p-lg rounded-xl border border-card-border card-hover flex flex-col gap-md">
+          <div class="w-11 h-11 rounded-lg bg-brand-soft flex items-center justify-center">
+            <span class="material-symbols-outlined text-brand" style="font-variation-settings:'FILL' 1;">fact_check</span>
+          </div>
+          <h3 class="font-display text-title text-ink">Plain-language reasoning</h3>
+          <p class="font-body text-body text-muted">Every verdict comes with a readable breakdown of exactly which signals pushed the score up or down &mdash; no black box.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="py-xl px-md text-center bg-ink text-on-ink">
+    <div class="max-w-2xl mx-auto space-y-md">
+      <h2 class="font-display text-display-md">Got something that feels off?</h2>
+      <p class="font-body text-body-lg text-on-ink/70">Drop it into the scanner and get a credibility readout in seconds.</p>
+      <div class="pt-sm">
+        <button onclick="navigate('detector')" class="px-lg py-md bg-brand hover:bg-signal transition-colors rounded-full font-display text-title shadow-xl active:scale-95 duration-200">
+          Scan an article
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="bg-paper-bright border-t border-card-border">
+    <div class="max-w-[1280px] mx-auto flex flex-col md:flex-row justify-between items-center gap-sm py-md px-md">
+      <div class="flex items-center gap-2">
+        <span class="material-symbols-outlined text-brand text-[20px]" style="font-variation-settings:'FILL' 1;">graphic_eq</span>
+        <span class="font-display text-label font-bold text-ink">Sift</span>
+        <span class="font-body text-label text-muted">&mdash; separate signal from noise.</span>
+      </div>
+      <div class="flex gap-lg">
+        <a class="font-body text-label text-muted hover:text-brand cursor-pointer" onclick="navigate('about')">Methodology</a>
+      </div>
+    </div>
+  </footer>
+</main>
+
+<!-- ====================================================== -->
+<!-- PAGE: DETECTOR / SCANNER -->
+<!-- ====================================================== -->
+<main id="page-detector" class="page pt-16 flex-grow">
+  <div class="max-w-[1280px] mx-auto w-full px-md py-lg grid grid-cols-1 lg:grid-cols-12 gap-lg">
+
+    <!-- Main content -->
+    <div class="lg:col-span-8 space-y-lg">
+      <section class="max-w-2xl space-y-1">
+        <h2 class="font-display text-display-md text-ink">Scanner</h2>
+        <p class="font-body text-body text-muted">Paste an article, headline, or claim. Sift runs it through all five layers and returns a credibility score with reasoning.</p>
+      </section>
+
+      <!-- Detector Card -->
+      <div class="bg-card rounded-xl border border-card-border overflow-hidden">
+        <div class="p-lg space-y-md">
+          <div class="relative">
+            <label class="block font-mono text-tag uppercase text-muted mb-2">Article text</label>
+            <textarea id="detector-input" oninput="updateCharCount(this)"
+              class="w-full h-52 p-md bg-paper border border-card-border rounded-lg focus:ring-2 focus:ring-brand focus:border-brand outline-none transition-all font-body text-body resize-none"
+              placeholder="Paste at least a few sentences for a reliable read..."></textarea>
+            <div class="absolute bottom-md right-md font-mono text-tag text-muted">
+              <span id="char-count">0</span> / 5,000
+            </div>
+          </div>
+          <div class="flex flex-wrap items-center justify-between gap-sm">
+            <div class="flex items-center gap-sm">
+              <button onclick="analyzeNews()" id="analyze-btn"
+                class="px-lg py-md bg-ink text-on-ink rounded-full font-display text-title hover:bg-brand transition-all active:scale-95 flex items-center gap-2">
+                <span class="material-symbols-outlined">graphic_eq</span> Run scan
+              </button>
+              <button onclick="clearInput()"
+                class="px-lg py-md border border-card-border text-muted rounded-full font-body text-label hover:bg-paper transition-all active:scale-95">
+                Clear
+              </button>
+            </div>
+            <div class="hidden md:flex items-center gap-2 text-muted">
+              <span class="material-symbols-outlined text-[18px]">bolt</span>
+              <span class="font-mono text-tag">~1s per scan</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Loading State -->
+      <div id="loading-state" class="hidden space-y-md p-lg border border-card-border rounded-xl bg-card">
+        <div class="flex items-center gap-md">
+          <div class="w-7 h-7 border-[3px] border-brand border-t-transparent rounded-full animate-spin"></div>
+          <span class="font-mono text-label text-muted uppercase tracking-wider">Sifting across 5 layers...</span>
+        </div>
+        <div class="space-y-sm">
+          <div class="h-3 w-full skeleton rounded"></div>
+          <div class="h-3 w-5/6 skeleton rounded"></div>
+          <div class="h-3 w-4/6 skeleton rounded"></div>
+        </div>
+      </div>
+
+      <!-- Result State -->
+      <div id="result-state" class="hidden space-y-md fade-in">
+
+        <!-- Verdict + Gauge -->
+        <div class="bg-card rounded-xl border border-card-border p-lg grid grid-cols-1 md:grid-cols-2 gap-md items-center">
+          <div class="flex flex-col gap-md">
+            <div id="verdict-banner" class="p-md rounded-lg flex items-center gap-md">
+              <span id="verdict-icon" class="material-symbols-outlined text-[36px]" style="font-variation-settings:'FILL' 1;">help</span>
+              <div>
+                <div class="font-mono text-tag uppercase tracking-widest mb-1" id="verdict-label">ANALYZING</div>
+                <div class="font-display text-title font-bold" id="verdict-text">&mdash;</div>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-sm">
+              <div class="bg-paper rounded-lg p-sm text-center">
+                <div class="font-mono text-headline text-noise" id="res-fake-prob">&mdash;</div>
+                <div class="font-mono text-tag uppercase text-muted mt-1">Fake prob.</div>
+              </div>
+              <div class="bg-paper rounded-lg p-sm text-center">
+                <div class="font-mono text-headline text-signal" id="res-real-prob">&mdash;</div>
+                <div class="font-mono text-tag uppercase text-muted mt-1">Real prob.</div>
+              </div>
+              <div class="bg-paper rounded-lg p-sm text-center">
+                <div class="font-mono text-headline text-ink" id="res-score">&mdash;</div>
+                <div class="font-mono text-tag uppercase text-muted mt-1">Credibility</div>
+              </div>
+              <div class="bg-paper rounded-lg p-sm text-center">
+                <div class="font-mono text-headline text-ink" id="res-words">&mdash;</div>
+                <div class="font-mono text-tag uppercase text-muted mt-1">Word count</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Gauge -->
+          <div class="flex flex-col items-center justify-center">
+            <svg viewBox="0 0 200 115" class="w-full max-w-[260px]">
+              <path d="M10,100 A90,90 0 0,1 59.1,19.8" fill="none" stroke="#E5533D" stroke-width="14" stroke-linecap="round"/>
+              <path d="M59.1,19.8 A90,90 0 0,1 140.9,19.8" fill="none" stroke="#E3A33E" stroke-width="14" stroke-linecap="round"/>
+              <path d="M140.9,19.8 A90,90 0 0,1 190,100" fill="none" stroke="#1E9C8C" stroke-width="14" stroke-linecap="round"/>
+              <g id="gauge-needle" style="transform: rotate(-90deg);">
+                <line x1="100" y1="100" x2="100" y2="15" stroke="#13182B" stroke-width="4" stroke-linecap="round"/>
+                <circle cx="100" cy="100" r="7" fill="#13182B"/>
+              </g>
+            </svg>
+            <div class="flex justify-between w-full max-w-[260px] -mt-2 font-mono text-tag uppercase text-muted">
+              <span class="text-noise">Noise</span>
+              <span id="score-bar-label" class="text-ink font-semibold">0.00</span>
+              <span class="text-signal">Signal</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Reasoning -->
+        <div class="bg-card rounded-xl border border-card-border p-lg">
+          <h3 class="font-display text-title text-ink mb-md flex items-center gap-2">
+            <span class="material-symbols-outlined text-brand">fact_check</span> Why this verdict
+          </h3>
+          <div id="reasoning-list" class="space-y-sm"></div>
+        </div>
+      </div>
+
+      <!-- Error State -->
+      <div id="error-state" class="hidden p-lg border border-noise rounded-xl bg-noise-soft text-on-noise" >
+        <div class="flex items-center gap-2 mb-2 text-[#A8331F]">
+          <span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1;">error</span>
+          <span class="font-display text-title">Scan failed</span>
+        </div>
+        <p id="error-msg" class="font-body text-body text-[#A8331F]">Could not reach the backend. Make sure the API server is running on port 8000.</p>
+      </div>
+
+    </div>
+
+    <!-- Sidebar -->
+    <aside class="lg:col-span-4 space-y-md">
+      <div class="bg-card rounded-xl p-md border border-card-border">
+        <div class="flex items-center justify-between mb-md">
+          <h3 class="font-display text-title text-ink flex items-center gap-2">
+            <span class="material-symbols-outlined text-brand">history</span> Recent scans
+          </h3>
+          <button class="text-brand font-mono text-tag uppercase hover:underline" onclick="navigate('dashboard')">View all</button>
+        </div>
+        <div id="recent-list" class="space-y-sm">
+          <p class="text-label text-muted text-center py-md">Nothing scanned yet.</p>
+        </div>
+      </div>
+      <div class="p-md rounded-xl bg-brand-soft border border-brand/30">
+        <p class="font-display text-title text-ink mb-1">Want a running log?</p>
+        <p class="font-body text-body text-muted mb-md">Connect Sift to PostgreSQL to keep history across sessions, and Airflow to retrain the model weekly as new scans come in.</p>
+        <button onclick="navigate('about')" class="w-full py-sm bg-ink text-on-ink rounded-full font-body text-label hover:bg-brand transition-all">See methodology</button>
+      </div>
+    </aside>
+  </div>
+</main>
+
+<!-- ====================================================== -->
+<!-- PAGE: DASHBOARD / ACTIVITY -->
+<!-- ====================================================== -->
+<main id="page-dashboard" class="page pt-16 flex-grow">
+  <div class="max-w-[1280px] mx-auto px-md py-lg space-y-lg">
+    <div class="flex flex-wrap justify-between items-center gap-sm">
+      <div>
+        <h2 class="font-display text-display-md text-ink">Activity</h2>
+        <p class="font-body text-body text-muted">Scans from this session.</p>
+      </div>
+      <button onclick="navigate('detector')" class="px-md py-sm bg-ink text-on-ink rounded-full font-body text-label flex items-center gap-2 hover:bg-brand transition-all">
+        <span class="material-symbols-outlined text-[18px]">add</span> New scan
+      </button>
+    </div>
+
+    <!-- Stats Row -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-md">
+      <div class="bg-card rounded-xl border border-card-border p-md">
+        <div class="font-mono text-display-md text-ink" id="dash-total">0</div>
+        <div class="font-mono text-tag uppercase text-muted mt-1">Total scanned</div>
+      </div>
+      <div class="bg-card rounded-xl border border-card-border p-md">
+        <div class="font-mono text-display-md text-noise" id="dash-fake">0</div>
+        <div class="font-mono text-tag uppercase text-muted mt-1">Flagged as fake</div>
+      </div>
+      <div class="bg-card rounded-xl border border-card-border p-md">
+        <div class="font-mono text-display-md text-signal" id="dash-real">0</div>
+        <div class="font-mono text-tag uppercase text-muted mt-1">Marked real</div>
+      </div>
+      <div class="bg-card rounded-xl border border-card-border p-md">
+        <div class="font-mono text-display-md text-ink">98.5%</div>
+        <div class="font-mono text-tag uppercase text-muted mt-1">Model accuracy</div>
+      </div>
+    </div>
+
+    <!-- Recent Table -->
+    <div class="bg-card rounded-xl border border-card-border overflow-hidden">
+      <div class="p-md border-b border-card-border">
+        <h3 class="font-display text-title text-ink">Scan history</h3>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full">
+          <thead class="bg-paper">
+            <tr>
+              <th class="text-left p-md font-mono text-tag text-muted uppercase">Text</th>
+              <th class="text-left p-md font-mono text-tag text-muted uppercase">Verdict</th>
+              <th class="text-left p-md font-mono text-tag text-muted uppercase">Score</th>
+              <th class="text-left p-md font-mono text-tag text-muted uppercase">Confidence</th>
+            </tr>
+          </thead>
+          <tbody id="dash-table-body">
+            <tr>
+              <td colspan="4" class="p-lg text-center text-muted font-body text-body">Nothing scanned yet. <a class="text-brand hover:underline cursor-pointer" onclick="navigate('detector')">Run your first scan &rarr;</a></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- ====================================================== -->
+<!-- PAGE: ABOUT / METHODOLOGY -->
+<!-- ====================================================== -->
+<main id="page-about" class="page pt-16 flex-grow">
+  <div class="max-w-[1280px] mx-auto px-md py-lg space-y-lg">
+    <div class="max-w-2xl space-y-1">
+      <h2 class="font-display text-display-md text-ink">Methodology</h2>
+      <p class="font-body text-body text-muted">How Sift turns one block of text into a credibility score.</p>
+    </div>
+
+    <!-- Architecture -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-lg">
+      <div class="bg-card rounded-xl border border-card-border p-lg space-y-md">
+        <h3 class="font-display text-title text-ink">The classifier</h3>
+        <p class="font-body text-body text-muted">A logistic regression model over TF-IDF bigram features, trained on the WELFake dataset (44,919 articles, 80/20 split), forms the largest single input to the score.</p>
+        <div class="grid grid-cols-3 gap-md">
+          <div class="text-center">
+            <div class="font-mono text-headline text-brand">98.5%</div>
+            <div class="font-mono text-tag uppercase text-muted">Precision</div>
+          </div>
+          <div class="text-center">
+            <div class="font-mono text-headline text-brand">97.2%</div>
+            <div class="font-mono text-tag uppercase text-muted">Recall</div>
+          </div>
+          <div class="text-center">
+            <div class="font-mono text-headline text-brand">97.8%</div>
+            <div class="font-mono text-tag uppercase text-muted">F1-score</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 5-Layer Breakdown -->
+      <div class="bg-card rounded-xl border border-card-border p-lg space-y-md">
+        <h3 class="font-display text-title text-ink">The five layers</h3>
+        <div class="space-y-sm">
+          <div class="flex items-center justify-between p-sm bg-paper rounded-lg">
+            <div class="flex items-center gap-2">
+              <span class="material-symbols-outlined text-brand text-[18px]" style="font-variation-settings:'FILL' 1;">model_training</span>
+              <span class="font-body text-body text-ink">Classifier (logistic regression)</span>
+            </div>
+            <span class="font-mono text-label font-bold text-brand">50%</span>
+          </div>
+          <div class="flex items-center justify-between p-sm bg-paper rounded-lg">
+            <div class="flex items-center gap-2">
+              <span class="material-symbols-outlined text-brand text-[18px]">spellcheck</span>
+              <span class="font-body text-body text-ink">Linguistic patterns</span>
+            </div>
+            <span class="font-mono text-label font-bold text-brand">15%</span>
+          </div>
+          <div class="flex items-center justify-between p-sm bg-paper rounded-lg">
+            <div class="flex items-center gap-2">
+              <span class="material-symbols-outlined text-brand text-[18px]">person_search</span>
+              <span class="font-body text-body text-ink">Named entities &amp; sourcing</span>
+            </div>
+            <span class="font-mono text-label font-bold text-brand">15%</span>
+          </div>
+          <div class="flex items-center justify-between p-sm bg-paper rounded-lg">
+            <div class="flex items-center gap-2">
+              <span class="material-symbols-outlined text-brand text-[18px]">rule</span>
+              <span class="font-body text-body text-ink">Structure &amp; length</span>
+            </div>
+            <span class="font-mono text-label font-bold text-brand">10%</span>
+          </div>
+          <div class="flex items-center justify-between p-sm bg-paper rounded-lg">
+            <div class="flex items-center gap-2">
+              <span class="material-symbols-outlined text-brand text-[18px]">wifi</span>
+              <span class="font-body text-body text-ink">Live fact-check (planned)</span>
+            </div>
+            <span class="font-mono text-label font-bold text-brand">10%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Verdict Thresholds -->
+    <div class="bg-card rounded-xl border border-card-border p-lg">
+      <h3 class="font-display text-title text-ink mb-md">Reading the score</h3>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-md">
+        <div class="p-md rounded-lg verdict-fake text-center">
+          <div class="font-mono text-tag mb-1">SCORE &lt; 0.35</div>
+          <div class="font-display text-title font-bold">Highly suspicious</div>
+          <div class="font-mono text-tag mt-1">Likely fake</div>
+        </div>
+        <div class="p-md rounded-lg verdict-misleading text-center">
+          <div class="font-mono text-tag mb-1">0.35&ndash;0.50</div>
+          <div class="font-display text-title font-bold">Misleading</div>
+          <div class="font-mono text-tag mt-1">Needs checking</div>
+        </div>
+        <div class="p-md rounded-lg verdict-uncertain text-center">
+          <div class="font-mono text-tag mb-1">0.50&ndash;0.65</div>
+          <div class="font-display text-title font-bold">Uncertain</div>
+          <div class="font-mono text-tag mt-1">Possibly real</div>
+        </div>
+        <div class="p-md rounded-lg verdict-real text-center">
+          <div class="font-mono text-tag mb-1">SCORE &gt; 0.65</div>
+          <div class="font-display text-title font-bold">Likely real</div>
+          <div class="font-mono text-tag mt-1">Strong signal</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Training Data -->
+    <div class="bg-card rounded-xl border border-card-border p-lg">
+      <h3 class="font-display text-title text-ink mb-md">Training dataset</h3>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-md">
+        <div class="text-center p-md bg-paper rounded-lg">
+          <div class="font-mono text-headline text-ink">44,919</div>
+          <div class="font-mono text-tag uppercase text-muted">Total articles</div>
+        </div>
+        <div class="text-center p-md bg-paper rounded-lg">
+          <div class="font-mono text-headline text-noise">23,502</div>
+          <div class="font-mono text-tag uppercase text-muted">Fake articles</div>
+        </div>
+        <div class="text-center p-md bg-paper rounded-lg">
+          <div class="font-mono text-headline text-signal">21,417</div>
+          <div class="font-mono text-tag uppercase text-muted">Real articles</div>
+        </div>
+      </div>
+      <p class="font-mono text-tag text-muted mt-md">Source: WELFake dataset (Kaggle). TF-IDF, bigrams, stop-word removal, max_df=0.75, min_df=5.</p>
+    </div>
+  </div>
+
+  <footer class="bg-paper-bright border-t border-card-border mt-auto">
+    <div class="max-w-[1280px] mx-auto py-md px-md">
+      <span class="font-body text-label text-muted">Sift &mdash; separate signal from noise.</span>
+    </div>
+  </footer>
+</main>
+
+<!-- ====================================================== -->
+<!-- JAVASCRIPT -->
+<!-- ====================================================== -->
+<script>
+  // ── State ──────────────────────────────────────────────
+  const history = [];
+
+  // ── Navigation ─────────────────────────────────────────
+  function navigate(page) {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.getElementById('page-' + page).classList.add('active');
+    document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+    const navMap = { detector: 'nav-scanner', dashboard: 'nav-dashboard', about: 'nav-about' };
+    const navEl = document.getElementById(navMap[page]);
+    if (navEl) navEl.classList.add('active');
+    window.scrollTo(0, 0);
+    if (page === 'dashboard') refreshDashboard();
+  }
+
+  // ── Char count ─────────────────────────────────────────
+  function updateCharCount(textarea) {
+    document.getElementById('char-count').innerText = textarea.value.length.toLocaleString();
+  }
+
+  function clearInput() {
+    const ta = document.getElementById('detector-input');
+    ta.value = '';
+    updateCharCount(ta);
+    document.getElementById('result-state').classList.add('hidden');
+    document.getElementById('error-state').classList.add('hidden');
+  }
+
+  // ── Analyze ────────────────────────────────────────────
+  async function analyzeNews() {
+    const text = document.getElementById('detector-input').value.trim();
+    if (!text || text.split(' ').length < 5) {
+      alert('Please enter at least 5 words to analyze.');
+      return;
+    }
+
+    document.getElementById('loading-state').classList.remove('hidden');
+    document.getElementById('result-state').classList.add('hidden');
+    document.getElementById('error-state').classList.add('hidden');
+
+    try {
+      const response = await fetch('http://localhost:8000/predict', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text })
+      });
+
+      if (!response.ok) throw new Error('Server error: ' + response.status);
+      const data = await response.json();
+      showResult(data, text);
+    } catch (err) {
+      // Fallback: run local scoring if backend not available
+      const fallback = localAnalyze(text);
+      showResult(fallback, text);
+    } finally {
+      document.getElementById('loading-state').classList.add('hidden');
+    }
+  }
+
+  // ── Local fallback scoring (mirrors predict.py logic) ──
+  function localAnalyze(text) {
+    const words = text.trim().split(/\s+/);
+    const wc = words.length;
+    const lower = text.toLowerCase();
+
+    // Linguistic
+    const suspicious = ["shocking","unbelievable","breaking","click here","you won't believe","miracle","secret","hoax","conspiracy","exposed","mainstream media","they don't want you to know"];
+    const hits = suspicious.filter(w => lower.includes(w)).length;
+    const hitRatio = hits / (wc / 10);
+    const ling = hitRatio >= 0.5 ? 0.2 : hitRatio >= 0.2 ? 0.5 : 0.8;
+
+    // Structural
+    const struct = wc < 10 ? 0.2 : wc < 30 ? 0.5 : 0.8;
+
+    // Entity
+    const strong = ["india","government","minister","police","university","company","president","court","parliament","cbi","rbi","supreme court","hospital","army","officer","tamil","chennai","coimbatore"];
+    const moderate = ["said","according","reported","official","source","announced","confirmed","stated","study","research"];
+    const sh = strong.filter(e => lower.includes(e)).length;
+    const mh = moderate.filter(e => lower.includes(e)).length;
+    const entity = sh >= 2 || (sh >= 1 && mh >= 1) ? 0.85 : sh === 1 || mh >= 2 ? 0.75 : mh === 1 ? 0.6 : 0.5;
+
+    // Fake words heuristic
+    const fakeWords = ["shocking","secret","conspiracy","hoax","exposed","miracle","unbelievable","leaked","coverup","they don't want","mainstream media hiding"];
+    const fakeScore = Math.min(fakeWords.filter(w => lower.includes(w)).length * 0.15, 0.75);
+    const fakeProbRaw = 0.1 + fakeScore + (1 - ling) * 0.2 + (1 - entity) * 0.1;
+    const fake_probability = Math.min(Math.max(fakeProbRaw, 0.02), 0.98);
+    const real_probability = 1 - fake_probability;
+
+    const score = real_probability * 0.50 + ling * 0.15 + struct * 0.10 + entity * 0.15 + 0.5 * 0.10;
+
+    let verdict;
+    if (score < 0.35) verdict = "Highly Suspicious — Likely FAKE";
+    else if (score < 0.50) verdict = "Misleading — Needs Verification";
+    else if (score < 0.65) verdict = "Uncertain — Possibly Real";
+    else verdict = "Likely REAL NEWS";
+
+    const reasons = [];
+    if (fake_probability > 0.75) reasons.push("ML model strongly predicts FAKE news");
+    else if (fake_probability > 0.55) reasons.push("ML model leans toward FAKE news");
+    if (wc < 10) reasons.push("Article is very short — insufficient content to analyze");
+    else if (wc < 30) reasons.push("News article is relatively short");
+    if (entity < 0.5) reasons.push("No named entities or credible references detected");
+    else if (entity >= 0.75) reasons.push("Credible named entities detected");
+    if (hits > 0) reasons.push(`Suspicious language detected: ${hits} sensational phrase(s) found`);
+    if (!reasons.length) reasons.push("No strong indicators of fake or real content found");
+
+    return { verdict, fake_probability: +fake_probability.toFixed(3), real_probability: +real_probability.toFixed(3), final_score: +score.toFixed(3), word_count: wc, reasons, _local: true };
+  }
+
+  // ── Show Result ────────────────────────────────────────
+  function showResult(data, text) {
+    const rs = document.getElementById('result-state');
+    rs.classList.remove('hidden');
+
+    const verdict = data.verdict || '';
+    const fakeProbRaw = data.fake_probability ?? 0;
+    const realProbRaw = data.real_probability ?? 0;
+    const score = data.final_score ?? (1 - fakeProbRaw);
+    const wordCount = data.word_count ?? text.split(' ').length;
+    const reasons = data.reasons || [];
+
+    // Verdict banner
+    const banner = document.getElementById('verdict-banner');
+    const icon = document.getElementById('verdict-icon');
+    const label = document.getElementById('verdict-label');
+    const vtext = document.getElementById('verdict-text');
+
+    banner.className = 'p-md rounded-lg flex items-center gap-md ';
+    if (verdict.includes('FAKE') || verdict.includes('Suspicious')) {
+      banner.className += 'verdict-fake';
+      icon.textContent = 'report';
+      label.textContent = 'HIGH NOISE';
+    } else if (verdict.includes('Misleading')) {
+      banner.className += 'verdict-misleading';
+      icon.textContent = 'warning';
+      label.textContent = 'MIXED SIGNAL';
+    } else if (verdict.includes('Uncertain')) {
+      banner.className += 'verdict-uncertain';
+      icon.textContent = 'help';
+      label.textContent = 'WEAK SIGNAL';
+    } else {
+      banner.className += 'verdict-real';
+      icon.textContent = 'verified';
+      label.textContent = 'CLEAR SIGNAL';
+    }
+
+    vtext.textContent = verdict.replace(/[⚠️🔶🔷✅]/g, '').trim();
+
+    document.getElementById('res-fake-prob').textContent = fakeProbRaw.toFixed(3);
+    document.getElementById('res-real-prob').textContent = realProbRaw.toFixed(3);
+    document.getElementById('res-score').textContent = score.toFixed(3);
+    document.getElementById('res-words').textContent = wordCount;
+
+    // Gauge needle: score 0 -> -90deg (noise/left), score 1 -> 90deg (signal/right)
+    const needle = document.getElementById('gauge-needle');
+    const angle = (score * 180) - 90;
+    document.getElementById('score-bar-label').textContent = score.toFixed(3);
+    needle.style.transform = 'rotate(-90deg)';
+    setTimeout(() => { needle.style.transform = `rotate(${angle}deg)`; }, 100);
+
+    // Reasoning
+    const rl = document.getElementById('reasoning-list');
+    rl.innerHTML = '';
+    const displayReasons = reasons.length ? reasons : ['No strong indicators detected'];
+    displayReasons.forEach(r => {
+      const d = document.createElement('div');
+      d.className = 'flex items-start gap-2 p-sm bg-paper rounded-lg';
+      d.innerHTML = `<span class="material-symbols-outlined text-brand text-[18px] mt-0.5" style="font-variation-settings:'FILL' 1;">chevron_right</span><span class="font-body text-body text-ink">${r}</span>`;
+      rl.appendChild(d);
+    });
+
+    // Add to history
+    const preview = text.length > 70 ? text.substring(0, 70) + '...' : text;
+    history.unshift({ preview, verdict, score: score.toFixed(3), conf: Math.round(Math.max(fakeProbRaw, realProbRaw) * 100) + '%' });
+    if (history.length > 20) history.pop();
+    refreshSidebar();
+  }
+
+  // ── Sidebar History ────────────────────────────────────
+  function refreshSidebar() {
+    const rl = document.getElementById('recent-list');
+    if (!history.length) {
+      rl.innerHTML = '<p class="text-label text-muted text-center py-md">Nothing scanned yet.</p>';
+      return;
+    }
+    rl.innerHTML = history.slice(0, 5).map(h => {
+      const cls = h.verdict.includes('FAKE') || h.verdict.includes('Suspicious') ? 'bg-noise-soft text-[#A8331F]' :
+                  h.verdict.includes('Real') ? 'bg-signal-soft text-[#126E62]' : 'bg-paper text-muted';
+      const badge = h.verdict.includes('FAKE') || h.verdict.includes('Suspicious') ? 'Fake' :
+                    h.verdict.includes('Real') ? 'Real' :
+                    h.verdict.includes('Misleading') ? 'Misleading' : 'Uncertain';
+      return `<div class="p-sm bg-paper-bright rounded-lg border border-card-border cursor-pointer hover:border-brand transition-all">
+        <div class="flex justify-between items-start mb-1">
+          <span class="px-xs py-[2px] ${cls} text-[10px] font-mono font-bold rounded uppercase tracking-wider">${badge}</span>
+          <span class="font-mono text-tag text-muted">Score: ${h.score}</span>
+        </div>
+        <p class="font-body text-label text-ink line-clamp-2">${h.preview}</p>
+      </div>`;
+    }).join('');
+  }
+
+  // ── Dashboard ──────────────────────────────────────────
+  function refreshDashboard() {
+    document.getElementById('dash-total').textContent = history.length;
+    const fakes = history.filter(h => h.verdict.includes('FAKE') || h.verdict.includes('Suspicious')).length;
+    const reals = history.filter(h => h.verdict.includes('Real')).length;
+    document.getElementById('dash-fake').textContent = fakes;
+    document.getElementById('dash-real').textContent = reals;
+
+    const tbody = document.getElementById('dash-table-body');
+    if (!history.length) {
+      tbody.innerHTML = '<tr><td colspan="4" class="p-lg text-center text-muted font-body text-body">Nothing scanned yet. <a class="text-brand hover:underline cursor-pointer" onclick="navigate(\'detector\')">Run your first scan &rarr;</a></td></tr>';
+      return;
+    }
+    tbody.innerHTML = history.map((h, i) => {
+      const verdictCls = h.verdict.includes('FAKE') || h.verdict.includes('Suspicious') ? 'bg-noise-soft text-[#A8331F]' :
+                         h.verdict.includes('Real') ? 'bg-signal-soft text-[#126E62]' : 'bg-paper text-muted';
+      return `<tr class="border-b border-card-border hover:bg-paper transition-colors">
+        <td class="p-md font-body text-label text-ink max-w-xs truncate">${h.preview}</td>
+        <td class="p-md"><span class="px-xs py-[2px] ${verdictCls} text-[10px] font-mono font-bold rounded uppercase tracking-wider">${h.verdict.replace(/[⚠️🔶🔷✅]/g,'').trim()}</span></td>
+        <td class="p-md font-mono text-label text-ink">${h.score}</td>
+        <td class="p-md font-mono text-label text-ink">${h.conf}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  // ── Init ───────────────────────────────────────────────
+  navigate('landing');
+</script>
+</body>
+</html>

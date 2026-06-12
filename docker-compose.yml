@@ -1,0 +1,111 @@
+version: "3.8"
+
+# ======================================================
+# FAKE NEWS DETECTOR — DATA ENGINEERING STACK
+# Services: PostgreSQL, pgAdmin, Airflow (webserver + scheduler)
+# ======================================================
+
+x-airflow-common: &airflow-common
+  image: apache/airflow:2.8.1
+  environment:
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    AIRFLOW__CORE__FERNET_KEY: ""
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth
+    PYTHONPATH: /opt/airflow/project
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./logs:/opt/airflow/logs
+    - ./plugins:/opt/airflow/plugins
+    - .:/opt/airflow/project          # mounts your whole project
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+services:
+
+  # ----------------------------------------------------
+  # POSTGRESQL — app DB + Airflow metadata DB
+  # ----------------------------------------------------
+  postgres:
+    image: postgres:15
+    container_name: fakenews_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: fakenews123
+      POSTGRES_DB: fakenews
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init_db.sql:/docker-entrypoint-initdb.d/init_db.sql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ----------------------------------------------------
+  # CREATE AIRFLOW DB (runs once)
+  # ----------------------------------------------------
+  airflow-init:
+    <<: *airflow-common
+    container_name: airflow_init
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db init &&
+        airflow users create \
+          --username admin \
+          --firstname Admin \
+          --lastname User \
+          --role Admin \
+          --email admin@example.com \
+          --password admin
+    restart: "no"
+
+  # ----------------------------------------------------
+  # AIRFLOW WEBSERVER — UI at localhost:8080
+  # ----------------------------------------------------
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: airflow_webserver
+    command: webserver
+    ports:
+      - "8080:8080"
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ----------------------------------------------------
+  # AIRFLOW SCHEDULER
+  # ----------------------------------------------------
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: airflow_scheduler
+    command: scheduler
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ----------------------------------------------------
+  # PGADMIN — DB GUI at localhost:5050
+  # ----------------------------------------------------
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: fakenews_pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@fakenews.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+
+volumes:
+  postgres_data:
